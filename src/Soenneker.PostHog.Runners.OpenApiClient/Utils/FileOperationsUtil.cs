@@ -4,6 +4,7 @@ using Soenneker.Extensions.String;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.Git.Util.Abstract;
 using Soenneker.Kiota.Util.Abstract;
+using Soenneker.OpenApi.Fixer.Abstract;
 using Soenneker.PostHog.Runners.OpenApiClient.Utils.Abstract;
 using Soenneker.Utils.Directory.Abstract;
 using Soenneker.Utils.Dotnet.Abstract;
@@ -30,19 +31,21 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
     private readonly IGitUtil _gitUtil;
     private readonly IDotnetUtil _dotnetUtil;
     private readonly IKiotaUtil _kiotaUtil;
+    private readonly IOpenApiFixer _openApiFixer;
     private readonly IYamlUtil _yamlUtil;
     private readonly IFileDownloadUtil _fileDownloadUtil;
     private readonly IFileUtil _fileUtil;
     private readonly IDirectoryUtil _directoryUtil;
 
     public FileOperationsUtil(ILogger<FileOperationsUtil> logger, IConfiguration configuration, IGitUtil gitUtil, IDotnetUtil dotnetUtil,
-        IFileDownloadUtil fileDownloadUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IKiotaUtil kiotaUtil, IYamlUtil yamlUtil)
+        IFileDownloadUtil fileDownloadUtil, IFileUtil fileUtil, IDirectoryUtil directoryUtil, IKiotaUtil kiotaUtil, IOpenApiFixer openApiFixer, IYamlUtil yamlUtil)
     {
         _logger = logger;
         _configuration = configuration;
         _gitUtil = gitUtil;
         _dotnetUtil = dotnetUtil;
         _kiotaUtil = kiotaUtil;
+        _openApiFixer = openApiFixer;
         _yamlUtil = yamlUtil;
         _fileDownloadUtil = fileDownloadUtil;
         _fileUtil = fileUtil;
@@ -63,8 +66,11 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
         string? filePath = await _fileDownloadUtil.Download(openApiDocumentUrl, yamlFilePath, fileExtension: ".yaml", cancellationToken: cancellationToken);
 
         string targetFilePath = Path.Combine(gitDirectory, "openapi.json");
+        string fixedFilePath = Path.Combine(gitDirectory, "fixed.json");
 
         await _yamlUtil.SaveAsJson(filePath, targetFilePath, true, cancellationToken);
+
+        await _openApiFixer.Fix(targetFilePath, fixedFilePath, cancellationToken);
 
         await _kiotaUtil.EnsureInstalled(cancellationToken);
 
@@ -72,7 +78,7 @@ public sealed class FileOperationsUtil : IFileOperationsUtil
 
         await DeleteAllExceptCsproj(srcDirectory, cancellationToken);
 
-        await _kiotaUtil.Generate(targetFilePath, "PostHogOpenApiClient", Constants.Library, gitDirectory, cancellationToken).NoSync();
+        await _kiotaUtil.Generate(fixedFilePath, "PostHogOpenApiClient", Constants.Library, gitDirectory, cancellationToken).NoSync();
 
         await BuildAndPush(gitDirectory, cancellationToken).NoSync();
     }
